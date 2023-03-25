@@ -1,6 +1,9 @@
 package main
 
-import "math"
+import (
+	"strings"
+	"math"
+)
 
 const (
 	x86 int8 = iota
@@ -11,7 +14,7 @@ func Sub[T any](arr []T, size uint8) []T {
 	return arr[:size]
 }
 
-func Map[T, F any](arr[]T, fn func(T)F) []F {
+func Map[T, F any](arr []T, fn func(T) F) []F {
 	result := make([]F, len(arr))
 
 	for i, v := range arr {
@@ -19,6 +22,16 @@ func Map[T, F any](arr[]T, fn func(T)F) []F {
 	}
 
 	return result
+}
+
+func GetString(bytes []byte) string {
+	builder := new(strings.Builder)
+
+	for i := 0; bytes[i] != 0; i++ {
+		builder.WriteByte(bytes[i])
+	}
+
+	return builder.String()
 }
 
 func Bytes2uint(bytes []byte) (result uint) {
@@ -45,6 +58,38 @@ func Uint2bytes(num uint, size int) []byte {
 	return result
 }
 
+func GetEnclosingSection(rva uint, scnHds []*Header) int {
+	lstIdx := len(scnHds) - 1
+	lstVS  := scnHds[lstIdx].elems[1].data
+	lstVA  := scnHds[lstIdx].elems[2].data
+	getVA  := func(h *Header) uint {
+		return h.elems[2].data
+	}
+
+	for i, v := range scnHds[:lstIdx] {
+		if getVA(v) < rva && rva < getVA(scnHds[i + 1]) {
+			return i
+		}
+	}
+
+	switch maxAddr := lstVA + lstVS; {
+	case rva < maxAddr: return lstIdx
+	default:            return -1
+	}
+}
+
+func RvaToRawWithScn(rva uint, scnHd *Header) uint {
+	return rva + scnHd.elems[4].data - scnHd.elems[2].data
+}
+
+func RvaToRaw(rva uint, scnHds []*Header) uint {
+	if scnIdx := GetEnclosingSection(rva, scnHds); scnIdx >= 0 {
+		return RvaToRawWithScn(rva, scnHds[scnIdx])
+	}
+	
+	panic("can not know a section including rva")
+}
+
 type ElemDetails struct {
 	size uint8
 	addr uint8
@@ -53,36 +98,8 @@ type ElemDetails struct {
 	val  string
 }
 
-func (e *ElemDetails) GetSize() uint8 {
-	return e.size
-}
-
-func (e *ElemDetails) GetAddr() uint8 {
-	return e.addr
-}
-
-func (e *ElemDetails) GetName() string {
-	return e.name
-}
-
-func (e *ElemDetails) GetValue() string {
-	return e.val
-}
-
-func (e *ElemDetails) GetData() uint {
-	return e.data
-}
-
 type Header struct {
 	offset uint
 	size   uint
-	Elems  []*ElemDetails
-}
-
-func (h *Header) GetOffset() uint {
-	return h.offset
-}
-
-func (h *Header) GetSize() uint {
-	return h.size
+	elems  []*ElemDetails
 }
