@@ -6,36 +6,6 @@ import (
 	"time"
 )
 
-type PeHeader struct {
-	dosHeader      *Header
-	fileHeader     *Header
-	optionalHeader *Header
-	dataDirectory  *Header
-	sectionHeaders []*Header
-}
-
-type TblInfo struct {
-	ordinal uint16
-	rva     uint32
-	name    string
-}
-
-type ImageImportDescriptor struct {
-	Header
-	info []*TblInfo
-}
-
-type ImportTable struct {
-	offset uint
-	size   uint
-	iids   []*ImageImportDescriptor
-}
-
-type ExportTable struct {
-	Header
-	info []*TblInfo
-}
-
 type nmSzPair struct {
 	nm string
 	sz uint8
@@ -221,33 +191,33 @@ func getScnOfEachDataDir(pe *PeHeader) []int {
 }
 
 func parseIAT(pe *PeHeader, wholeFl []byte) *ImportTable {
-	rvaToRawWith := func(rva uint) uint {
-		return RvaToRaw(rva, pe.sectionHeaders)
-	}
 	getLibName   := func(addr uint) string {
-		return GetString(wholeFl[rvaToRawWith(addr):])
+		return GetString(wholeFl[pe.RvaToRaw(addr):])
 	}
 	imptTbl      := &ImportTable{
 		offset: pe.dataDirectory.elems[2].data,
 		size:   pe.dataDirectory.elems[3].data,
 	}
-	rawOffset    := rvaToRawWith(imptTbl.offset)
 
-	for ; Bytes2uint(wholeFl[rawOffset:rawOffset+4]) != 0; rawOffset += 20 {
+	if imptTbl.offset == 0 || imptTbl.size == 0 {
+		return &ImportTable{}
+	}
+
+	for rOffset := pe.RvaToRaw(imptTbl.offset); Bytes2uint(Sub(wholeFl[rOffset:], 4)) != 0; rOffset += 20 {
 		iid   := &ImageImportDescriptor{
-			Header: *parseOneHeader(rawOffset, 20, wholeFl, iidNmSz[:], func(i int, d uint) string {
+			Header: *parseOneHeader(rOffset, 20, wholeFl, iidNmSz[:], func(i int, d uint) string {
 				switch i {
 				case 3:  return getLibName(d)
 				default: return ""
 				}
 			}),
 		}
-		oThnk := rvaToRawWith(iid.elems[0].data)
+		oThnk := pe.RvaToRaw(iid.elems[0].data)
 		thnk  := iid.elems[4].data
 
 		for {
 			imgImptByNmptrRVA := Bytes2uint(Sub(wholeFl[oThnk:], 4))
-			imgImptByNmPtr    := rvaToRawWith(imgImptByNmptrRVA)
+			imgImptByNmPtr    := pe.RvaToRaw(imgImptByNmptrRVA)
 
 			if imgImptByNmptrRVA == 0 {
 				break
@@ -267,6 +237,43 @@ func parseIAT(pe *PeHeader, wholeFl []byte) *ImportTable {
 	}
 
 	return imptTbl
+}
+
+func parseEAT(pe *PeHeader, wholeFl []byte) *ExportTable {
+	offset  := pe.RvaToRaw(pe.dataDirectory.elems[0].data)
+	size    := pe.dataDirectory.elems[1].data
+	getName := func(addr uint) string {
+		return GetString(wholeFl[pe.RvaToRaw(addr):])
+	}
+
+	if offset == 0 || size == 0 {
+		return &ExportTable{}
+	}
+
+	exptTbl      := &ExportTable{
+		Header: *parseOneHeader(offset, size, wholeFl, exptTblNmSz[:], func(i int, d uint) string {
+			switch i {
+			case 4:  return getName(d)
+			default: return ""
+			}
+		}),
+	}
+	addrOfFuncs  := pe.RvaToRaw(exptTbl.elems[8].data)
+	addrOfNames  := pe.RvaToRaw(exptTbl.elems[9].data)
+	addrOfNmOrds := pe.RvaToRaw(exptTbl.elems[10].data)
+
+	for i := uint(0); i < exptTbl.elems[7].data; i++ {
+		name := getName(Bytes2uint(Sub(wholeFl[addrOfNames:], 4)))
+		ord  := uint16(Bytes2uint(Sub(wholeFl[addrOfNmOrds:], 2)))
+		rva  := uint32(Bytes2uint(Sub(wholeFl[addrOfFuncs + 4 * uint(ord):], 4)))
+
+		exptTbl.info = append(exptTbl.info, &TblInfo{ordinal: ord, name: name, rva: rva})
+
+		addrOfNames  += 4
+		addrOfNmOrds += 2
+	}
+
+	return exptTbl
 }
 
 func parseOneHeader(offset, sz uint, wholeFl []byte, nmSz []nmSzPair, getVal func(int, uint) string) *Header {

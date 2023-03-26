@@ -45,7 +45,7 @@ func (w *whetherPE) check(wholeBytes []byte) (bool, int8) {
 }
 
 func main() {
-	file, err := getFileBytes("PEView.exe")
+	file, err := getFileBytes("PEview.exe")
 	if err != nil {
 		fmt.Println("No way~")
 		return
@@ -56,7 +56,7 @@ func main() {
 		start := time.Now()
 		pe := ParsePE(file, os)
 		fmt.Println(time.Since(start))
-		/*
+		
 		for _, v := range pe.dosHeader.elems {
 			fmt.Println(v)
 		}
@@ -81,7 +81,7 @@ func main() {
 			}
 			fmt.Println()
 		}
-		fmt.Println()*/
+		fmt.Println()
 		temp1 := parseIAT(pe, file)
 		fmt.Printf("%d %d\n", temp1.offset, temp1.size)
 		for _, v := range temp1.iids {
@@ -98,5 +98,17 @@ func main() {
 			fmt.Println()
 			fmt.Println()
 		}
+
+		temp2 := parseEAT(pe, file)
+		fmt.Printf("%d %d\n", temp2.offset, temp2.size)
+		for _, v := range temp2.elems {
+			fmt.Println(v)
+		}
+		fmt.Println()
+		
+		for _, v := range temp2.info {
+			fmt.Println(v)
+		}
+		fmt.Println()
 	}
 }

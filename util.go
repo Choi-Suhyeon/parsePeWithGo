@@ -82,14 +82,6 @@ func RvaToRawWithScn(rva uint, scnHd *Header) uint {
 	return rva + scnHd.elems[4].data - scnHd.elems[2].data
 }
 
-func RvaToRaw(rva uint, scnHds []*Header) uint {
-	if scnIdx := GetEnclosingSection(rva, scnHds); scnIdx >= 0 {
-		return RvaToRawWithScn(rva, scnHds[scnIdx])
-	}
-	
-	panic("can not know a section including rva")
-}
-
 type ElemDetails struct {
 	size uint8
 	addr uint8
@@ -102,4 +94,42 @@ type Header struct {
 	offset uint
 	size   uint
 	elems  []*ElemDetails
+}
+
+type PeHeader struct {
+	dosHeader      *Header
+	fileHeader     *Header
+	optionalHeader *Header
+	dataDirectory  *Header
+	sectionHeaders []*Header
+}
+
+func (pe *PeHeader) RvaToRaw(rva uint) uint {
+	if scnIdx := GetEnclosingSection(rva, pe.sectionHeaders); scnIdx >= 0 {
+		return RvaToRawWithScn(rva, pe.sectionHeaders[scnIdx])
+	}
+	
+	panic("can not know a section including rva")
+}
+
+type TblInfo struct {
+	ordinal uint16
+	rva     uint32
+	name    string
+}
+
+type ImageImportDescriptor struct {
+	Header
+	info []*TblInfo
+}
+
+type ImportTable struct {
+	offset uint
+	size   uint
+	iids   []*ImageImportDescriptor
+}
+
+type ExportTable struct {
+	Header
+	info []*TblInfo
 }
